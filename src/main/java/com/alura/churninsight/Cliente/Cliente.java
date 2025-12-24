@@ -1,5 +1,6 @@
 package com.alura.churninsight.Cliente;
 
+import jakarta.persistence.*;
 import lombok.Data;
 
 @Entity
@@ -42,4 +43,6 @@ public class Cliente {
 
     @Column(nullable = false)
     private Integer edad;
+
+    public Cliente() {}
 }

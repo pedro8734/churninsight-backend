@@ -1,4 +1,4 @@
-package com.alura.churninsight.Cliente;
+package com.alura.churninsight.domian.Cliente;
 import jakarta.validation.constraints.*;
 
 public record ClienteDatos(

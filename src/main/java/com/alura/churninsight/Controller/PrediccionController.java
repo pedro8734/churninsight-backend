@@ -50,9 +50,9 @@ public class PrediccionController {
         return ResponseEntity.ok(prediccionService.obtenerClientesAltoRiesgo());
     }
 
-    @GetMapping("/all-latest")
-    public ResponseEntity<List<HistorialDTO>> obtenerTodasLasUltimasPredicciones() {
-        return ResponseEntity.ok(prediccionService.obtenerTodasLasUltimasPredicciones());
+    @GetMapping("/stats-charts")
+    public ResponseEntity<com.alura.churninsight.domain.Prediccion.DatosGraficosDTO> obtenerDatosGraficos() {
+        return ResponseEntity.ok(prediccionService.obtenerDatosGraficos());
     }
 
     @DeleteMapping("/all")

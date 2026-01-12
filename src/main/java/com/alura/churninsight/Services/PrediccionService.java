@@ -8,6 +8,7 @@ import com.alura.churninsight.domain.Prediccion.DatosSolicitudPrediccion;
 import com.alura.churninsight.domain.Prediccion.ResultadoPrediccion;
 import com.alura.churninsight.domain.Prediccion.DatosEstadisticas;
 import com.alura.churninsight.domain.Prediccion.HistorialDTO;
+import com.alura.churninsight.domain.Prediccion.DatosGraficosDTO;
 import com.alura.churninsight.Infra.ValidacionDeNegocioException;
 import com.alura.churninsight.domain.Cliente.PlanStatus;
 import jakarta.persistence.EntityNotFoundException;
@@ -107,7 +108,8 @@ public class PrediccionService {
                 return new DatosEstadisticas(total, tasaCancelacion);
         }
 
-        @Transactional
+        // Removido @Transactional para evitar bloqueos de DB durante llamadas lentas a
+        // IA
         public List<ResultadoPrediccion> predecirEnLote(MultipartFile archivo) {
                 try {
                         String contenido = new String(archivo.getBytes());
@@ -159,19 +161,23 @@ public class PrediccionService {
                                 .toList();
         }
 
-        public List<HistorialDTO> obtenerTodasLasUltimasPredicciones() {
-                return prediccionRepository.buscarTodasLasUltimasPredicciones().stream()
-                                .map(p -> new HistorialDTO(
-                                                p.getId(),
-                                                p.getCliente().getClienteId(),
-                                                p.getProbabilidad(),
-                                                p.getResultado(),
-                                                p.getCliente().getChurn() != null ? p.getCliente().getChurn() : false,
-                                                p.getFecha(),
-                                                p.getFactores(),
-                                                p.getCliente().getPlan() != null ? p.getCliente().getPlan().toString()
-                                                                : "N/A"))
-                                .toList();
+        public DatosGraficosDTO obtenerDatosGraficos() {
+                List<Prediccion> todas = prediccionRepository.buscarTodasLasUltimasPredicciones();
+
+                long churn = todas.stream().filter(p -> p.getCliente().getChurn() != null && p.getCliente().getChurn())
+                                .count();
+                long ret = todas.size() - churn;
+                long b = todas.stream().filter(p -> p.getCliente().getPlan() != null
+                                && "BASICO".equals(p.getCliente().getPlan().name())).count();
+                long e = todas.stream().filter(p -> p.getCliente().getPlan() != null
+                                && "ESTANDAR".equals(p.getCliente().getPlan().name())).count();
+                long premiumCount = todas.stream().filter(p -> p.getCliente().getPlan() != null
+                                && "PREMIUM".equals(p.getCliente().getPlan().name())).count();
+                long rB = todas.stream().filter(p -> p.getProbabilidad() < 0.4).count();
+                long rM = todas.stream().filter(p -> p.getProbabilidad() >= 0.4 && p.getProbabilidad() < 0.7).count();
+                long rA = todas.stream().filter(p -> p.getProbabilidad() >= 0.7).count();
+
+                return new DatosGraficosDTO(todas.size(), churn, ret, b, e, premiumCount, rB, rM, rA);
         }
 
         @Transactional

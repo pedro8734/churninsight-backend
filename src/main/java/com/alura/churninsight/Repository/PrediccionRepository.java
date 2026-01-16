@@ -19,4 +19,17 @@ public interface PrediccionRepository extends JpaRepository<Prediccion, Long> {
 
     @Query("SELECT p FROM Prediccion p LEFT JOIN FETCH p.cliente LEFT JOIN FETCH p.factores WHERE p.id IN (SELECT MAX(p2.id) FROM Prediccion p2 GROUP BY p2.cliente.id) ORDER BY p.fecha DESC")
     java.util.List<Prediccion> buscarTodasLasUltimasPredicciones();
+
+    // Optimizaciones para Dashboard (Cálculos en DB)
+    @Query("SELECT COUNT(p) FROM Prediccion p WHERE p.id IN (SELECT MAX(p2.id) FROM Prediccion p2 GROUP BY p2.cliente.id) AND p.cliente.plan = :plan")
+    long countByUltimaPrediccionYPlan(com.alura.churninsight.domain.Cliente.PlanStatus plan);
+
+    @Query("SELECT COUNT(p) FROM Prediccion p WHERE p.id IN (SELECT MAX(p2.id) FROM Prediccion p2 GROUP BY p2.cliente.id) AND p.probabilidad < :max")
+    long countRiesgoBajo(double max);
+
+    @Query("SELECT COUNT(p) FROM Prediccion p WHERE p.id IN (SELECT MAX(p2.id) FROM Prediccion p2 GROUP BY p2.cliente.id) AND p.probabilidad >= :min AND p.probabilidad < :max")
+    long countRiesgoMedio(double min, double max);
+
+    @Query("SELECT COUNT(p) FROM Prediccion p WHERE p.id IN (SELECT MAX(p2.id) FROM Prediccion p2 GROUP BY p2.cliente.id) AND p.probabilidad >= :min")
+    long countRiesgoAlto(double min);
 }

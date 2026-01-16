@@ -55,12 +55,6 @@ public class PrediccionController {
         return ResponseEntity.ok(prediccionService.obtenerDatosGraficos());
     }
 
-    @DeleteMapping("/all")
-    public ResponseEntity<Void> eliminarTodo() {
-        prediccionService.eliminarTodo();
-        return ResponseEntity.noContent().build();
-    }
-
     @GetMapping("/clients/ids")
     public ResponseEntity<java.util.List<Integer>> obtenerIDsDisponibles() {
         return ResponseEntity.ok(prediccionService.obtenerTodosLosClienteIds());

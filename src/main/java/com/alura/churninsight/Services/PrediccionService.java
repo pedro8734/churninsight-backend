@@ -69,10 +69,9 @@ public class PrediccionService {
                                 .calcularProbabilidadCancelacion(cliente);
 
                 double probabilidad = resultadoModelo.probabilidad();
-                boolean isChurn = probabilidad >= 0.6; // Valor solicitado por el equipo (churn)
+                boolean isChurn = probabilidad >= 0.6;
                 String prevision = isChurn ? "Va a cancelar" : "No va a cancelar";
 
-                // Guardar estado en el cliente (como pidió el equipo)
                 cliente.setChurn(isChurn);
                 clienteRepository.save(cliente);
 
@@ -108,41 +107,53 @@ public class PrediccionService {
                 return new DatosEstadisticas(total, tasaCancelacion);
         }
 
-        // Removido @Transactional para evitar bloqueos de DB durante llamadas lentas a
-        // IA
         public List<ResultadoPrediccion> predecirEnLote(MultipartFile archivo) {
                 try {
                         String contenido = new String(archivo.getBytes());
                         String[] lineas = contenido.split("\n");
-                        java.util.List<ResultadoPrediccion> resultados = new java.util.ArrayList<>();
+                        log.info("Iniciando procesamiento por lote de {} líneas...", lineas.length - 1);
 
-                        for (int i = 1; i < lineas.length; i++) {
-                                String linea = lineas[i].trim();
-                                if (linea.isEmpty())
-                                        continue;
-                                int numeroLinea = i + 1;
-                                try {
-                                        String[] celdas = linea.split(",");
-                                        Integer idCliente = Integer.parseInt(celdas[0].trim());
+                        // Procesamiento en paralelo para agilizar las llamadas a la API de Python
+                        return java.util.Arrays.stream(lineas)
+                                        .skip(1) // Saltar cabecera
+                                        .parallel() // Procesamiento concurrente
+                                        .map(linea -> {
+                                                String fila = linea.trim();
+                                                if (fila.isEmpty())
+                                                        return null;
+                                                try {
+                                                        String[] celdas = fila.split(",");
+                                                        // RESPETAMOS EL ID ORIGINAL DEL NEGOCIO (ESCENARIO REAL)
+                                                        Integer idCliente = Integer.parseInt(celdas[0].trim());
 
-                                        Cliente cliente = clienteService.registrarOActualizar(
-                                                        idCliente,
-                                                        Integer.parseInt(celdas[1].trim()),
-                                                        Integer.parseInt(celdas[2].trim()),
-                                                        Double.parseDouble(celdas[3].trim()),
-                                                        PlanStatus.valueOf(celdas[4].trim().toUpperCase()),
-                                                        Integer.parseInt(celdas[5].trim()),
-                                                        null, null, null, null // Defaults
-                                        );
+                                                        // registrarOActualizar buscará si el ID existe:
+                                                        // - Si existe: Actualiza los datos del cliente
+                                                        // - No existe: Crea un cliente nuevo
+                                                        Cliente cliente = clienteService.registrarOActualizar(
+                                                                        idCliente,
+                                                                        Integer.parseInt(celdas[1].trim()),
+                                                                        Integer.parseInt(celdas[2].trim()),
+                                                                        Double.parseDouble(celdas[3].trim()),
+                                                                        PlanStatus.valueOf(
+                                                                                        celdas[4].trim().toUpperCase()),
+                                                                        Integer.parseInt(celdas[5].trim()),
+                                                                        null, null, null, null // Defaults
+                                                        );
 
-                                        resultados.add(procesarPrediccion(cliente));
-                                } catch (Exception e) {
-                                        log.warn("Error procesando línea {} del CSV: {}", numeroLinea, e.getMessage());
-                                }
-                        }
-                        return resultados;
+                                                        // Siempre genera una nueva predicción histórica para este
+                                                        // cliente
+                                                        return procesarPrediccion(cliente);
+                                                } catch (Exception e) {
+                                                        log.warn("Error procesando línea: {}. Detalle: {}", fila,
+                                                                        e.getMessage());
+                                                        return null;
+                                                }
+                                        })
+                                        .filter(java.util.Objects::nonNull)
+                                        .toList();
                 } catch (Exception e) {
-                        throw new RuntimeException("Error al leer el archivo CSV", e);
+                        log.error("Error crítico en procesamiento por lote: {}", e.getMessage());
+                        throw new RuntimeException("Error al procesar el archivo CSV", e);
                 }
         }
 
@@ -162,28 +173,20 @@ public class PrediccionService {
         }
 
         public DatosGraficosDTO obtenerDatosGraficos() {
-                List<Prediccion> todas = prediccionRepository.buscarTodasLasUltimasPredicciones();
+                long total = prediccionRepository.countTotalEvaluados();
+                long churn = prediccionRepository.countChurnProbable();
+                long retencion = total - churn;
 
-                long churn = todas.stream().filter(p -> p.getCliente().getChurn() != null && p.getCliente().getChurn())
-                                .count();
-                long ret = todas.size() - churn;
-                long b = todas.stream().filter(p -> p.getCliente().getPlan() != null
-                                && "BASICO".equals(p.getCliente().getPlan().name())).count();
-                long e = todas.stream().filter(p -> p.getCliente().getPlan() != null
-                                && "ESTANDAR".equals(p.getCliente().getPlan().name())).count();
-                long premiumCount = todas.stream().filter(p -> p.getCliente().getPlan() != null
-                                && "PREMIUM".equals(p.getCliente().getPlan().name())).count();
-                long rB = todas.stream().filter(p -> p.getProbabilidad() < 0.4).count();
-                long rM = todas.stream().filter(p -> p.getProbabilidad() >= 0.4 && p.getProbabilidad() < 0.7).count();
-                long rA = todas.stream().filter(p -> p.getProbabilidad() >= 0.7).count();
+                long basico = prediccionRepository.countByUltimaPrediccionYPlan(PlanStatus.BASICO);
+                long estandar = prediccionRepository.countByUltimaPrediccionYPlan(PlanStatus.ESTANDAR);
+                long premium = prediccionRepository.countByUltimaPrediccionYPlan(PlanStatus.PREMIUM);
 
-                return new DatosGraficosDTO(todas.size(), churn, ret, b, e, premiumCount, rB, rM, rA);
-        }
+                long riesgoBajo = prediccionRepository.countRiesgoBajo(0.4);
+                long riesgoMedio = prediccionRepository.countRiesgoMedio(0.4, 0.7);
+                long riesgoAlto = prediccionRepository.countRiesgoAlto(0.7);
 
-        @Transactional
-        public void eliminarTodo() {
-                prediccionRepository.deleteAll();
-                clienteRepository.deleteAll();
+                return new DatosGraficosDTO(total, churn, retencion, basico, estandar, premium, riesgoBajo, riesgoMedio,
+                                riesgoAlto);
         }
 
         public java.util.List<Integer> obtenerTodosLosClienteIds() {

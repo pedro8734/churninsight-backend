@@ -11,7 +11,11 @@ public class ChurninsightApplication {
 	}
 
 	@org.springframework.context.annotation.Bean
-	public org.springframework.web.client.RestTemplate restTemplate() {
-		return new org.springframework.web.client.RestTemplate();
+	public org.springframework.web.client.RestTemplate restTemplate(
+			org.springframework.boot.web.client.RestTemplateBuilder builder) {
+		return builder
+				.connectTimeout(java.time.Duration.ofSeconds(10))
+				.readTimeout(java.time.Duration.ofSeconds(10))
+				.build();
 	}
 }
